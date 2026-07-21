@@ -13,9 +13,9 @@ pub enum WavFormat {
 
 #[derive(Copy, Clone, Default, Debug)]
 pub struct WavFormatBlock {
-    pub audio_format:    WavFormat,
-    pub channels:        u16,
-    pub sample_rate:     u32,
+    pub audio_format: WavFormat,
+    pub channels: u16,
+    pub sample_rate: u32,
     pub bits_per_sample: u16,
 }
 
@@ -23,7 +23,7 @@ pub struct WavFormatBlock {
 pub struct WavInfo {
     pub format: WavFormatBlock,
     /// (offset, size)
-    pub data:   (u32, u32),
+    pub data: (u32, u32),
     /// (offset, size)
     pub others: Vec<(u32, u32)>,
 }
@@ -153,12 +153,7 @@ impl WavFormatBlock {
         reader.read_exact(&mut buf).await?;
         let bits_per_sample = buf[2] as u16 + ((buf[3] as u16) << 8);
 
-        Ok(Self {
-            audio_format,
-            channels,
-            sample_rate,
-            bits_per_sample,
-        })
+        Ok(Self { audio_format, channels, sample_rate, bits_per_sample })
     }
 
     pub fn into_bytes(self) -> [u8; 24] {

@@ -7,6 +7,7 @@ use std::{
     str::Utf8Error,
 };
 
+
 use image::{ColorType, DynamicImage, ImageFormat};
 use num_enum::TryFromPrimitive;
 use thiserror::Error;
@@ -42,9 +43,9 @@ impl From<InvalidPointerError> for FlacParseError {
 
 #[derive(Clone, Debug, Default)]
 pub struct FlacMetadataBlock {
-    pub is_last:    bool,
+    pub is_last: bool,
     pub block_type: FlacMetadataBlockType,
-    pub content:    FlacMetadataBlockContent,
+    pub content: FlacMetadataBlockContent,
 }
 
 impl FlacMetadataBlock {
@@ -67,11 +68,7 @@ impl FlacMetadataBlock {
         reader.read_exact(&mut content_buf).await?;
 
         let content = FlacMetadataBlockContent::parse_bytes(&content_buf, block_type)?;
-        Ok(Self {
-            is_last: last_metadata,
-            block_type,
-            content,
-        })
+        Ok(Self { is_last: last_metadata, block_type, content })
     }
 
     #[allow(dead_code)]
@@ -109,13 +106,13 @@ impl FlacMetadataBlock {
 #[derive(Clone, Copy, PartialEq, Eq, TryFromPrimitive, Debug, Default)]
 pub enum FlacMetadataBlockType {
     #[default]
-    StreamInfo    = 0,
-    Padding       = 1,
-    Application   = 2,
-    SeekTable     = 3,
+    StreamInfo = 0,
+    Padding = 1,
+    Application = 2,
+    SeekTable = 3,
     VorbisComment = 4,
-    CUESheet      = 5,
-    Picture       = 6,
+    CUESheet = 5,
+    Picture = 6,
 }
 
 /// The FLAC-embedded CUESheet metadata block **is not** used to parse
@@ -175,7 +172,7 @@ impl FlacMetadataBlockContent {
 
                 let vendor_len = bytes.read_u32_le(&mut pointer)? as usize;
                 let vendor_bytes = bytes.read_bytes(&mut pointer, vendor_len)?;
-                let vendor = std::str::from_utf8(vendor_bytes)?.to_owned();
+                let vendor = String::from_utf8_lossy(vendor_bytes).into_owned();
 
                 let user_comments_len = bytes.read_u32_le(&mut pointer)? as usize;
                 let user_comments = (0..user_comments_len)
@@ -183,22 +180,19 @@ impl FlacMetadataBlockContent {
                         let comment_len = bytes.read_u32_le(&mut pointer)? as usize;
                         let comment_bytes = bytes.read_bytes(&mut pointer, comment_len)?;
 
-                        let comment_str = std::str::from_utf8(comment_bytes)?;
+                        let comment_str = String::from_utf8_lossy(comment_bytes);
                         let split = comment_str.split_once('=');
 
                         match split {
                             Some((key, value)) => Ok((key.to_owned(), value.to_owned())),
-                            None => {
-                                Err(FlacParseError::InvalidVorbisComment(comment_str.to_owned()))
-                            }
+                            None => Err(FlacParseError::InvalidVorbisComment(
+                                comment_str.to_owned().to_string(),
+                            )),
                         }
                     })
                     .collect::<Result<HashMap<_, _>, FlacParseError>>()?;
 
-                Self::VorbisComment(VorbisCommentBlock {
-                    vendor,
-                    user_comments,
-                })
+                Self::VorbisComment(VorbisCommentBlock { vendor, user_comments })
             }
             FlacMetadataBlockType::Picture => {
                 let mut pointer = 0;
@@ -209,11 +203,11 @@ impl FlacMetadataBlockContent {
 
                 let mime_len = bytes.read_u32(&mut pointer)? as usize;
                 let mime_type = bytes.read_bytes(&mut pointer, mime_len)?;
-                let mime_type = std::str::from_utf8(mime_type)?;
+                let mime_type = String::from_utf8_lossy(mime_type);
 
                 let desc_len = bytes.read_u32(&mut pointer)? as usize;
                 let description = bytes.read_bytes(&mut pointer, desc_len)?;
-                let description = std::str::from_utf8(description)?;
+                let description = String::from_utf8_lossy(description);
 
                 let width = bytes.read_u32(&mut pointer)?;
                 let height = bytes.read_u32(&mut pointer)?;
@@ -225,8 +219,8 @@ impl FlacMetadataBlockContent {
 
                 Self::Picture(PictureBlock {
                     picture_type,
-                    mime_type: mime_type.to_owned(),
-                    description: description.to_owned(),
+                    mime_type: mime_type.into_owned(),
+                    description: description.into_owned(),
                     width,
                     height,
                     color_depth,
@@ -318,13 +312,13 @@ pub struct StreamInfoBlock {
     pub max_block_size: u16,
     pub min_frame_size: u32,
     pub max_frame_size: u32,
-    sample_rate:        u32,
+    sample_rate: u32,
     /// Value stored in FLAC, equals to (number of channels) - 1
-    channels:           u8,
+    channels: u8,
     /// Value stored in FLAC, equals to (bits per sample) - 1
-    bits_per_sample:    u8,
-    pub sample_count:   u64,
-    pub md5:            [u8; 16],
+    bits_per_sample: u8,
+    pub sample_count: u64,
+    pub md5: [u8; 16],
 }
 
 impl StreamInfoBlock {
@@ -343,16 +337,13 @@ impl StreamInfoBlock {
 
 #[derive(Clone, Debug)]
 pub struct VorbisCommentBlock {
-    vendor:            String,
+    vendor: String,
     pub user_comments: HashMap<String, String>,
 }
 
 impl VorbisCommentBlock {
     pub fn new() -> Self {
-        Self {
-            vendor:        "trackfs-rs".to_string(),
-            user_comments: Default::default(),
-        }
+        Self { vendor: "trackfs-rs".to_string(), user_comments: Default::default() }
     }
 
     pub fn add_vorbis_comment(&mut self, key: impl ToString, value: impl ToString) {
@@ -377,14 +368,14 @@ impl VorbisCommentBlock {
 #[derive(Clone, Debug)]
 pub struct PictureBlock {
     picture_type: PictureType,
-    mime_type:    String,
-    description:  String,
-    width:        u32,
-    height:       u32,
-    color_depth:  u32,
+    mime_type: String,
+    description: String,
+    width: u32,
+    height: u32,
+    color_depth: u32,
     /// For indexed-color pictures (e.g. GIF), the number of colors used, or 0
     /// for non-indexed pictures.
-    colors:       u32,
+    colors: u32,
     picture_data: Vec<u8>,
 }
 
@@ -442,79 +433,79 @@ fn color_type_to_depth(color_type: ColorType) -> u32 {
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, TryFromPrimitive, Debug)]
 pub enum PictureType {
-    Other              = 0,
+    Other = 0,
     /// 32x32 pixels 'file icon' (PNG only)
-    FileIcon           = 1,
-    OtherFileIcon      = 2,
-    FrontCover         = 3,
-    BackCover          = 4,
-    LeafletPage        = 5,
+    FileIcon = 1,
+    OtherFileIcon = 2,
+    FrontCover = 3,
+    BackCover = 4,
+    LeafletPage = 5,
     /// e.g. label side of CD
-    Media              = 6,
+    Media = 6,
     /// Lead artist/lead performer/soloist
-    LeadArtist         = 7,
-    Artist             = 8,
-    Conductor          = 9,
+    LeadArtist = 7,
+    Artist = 8,
+    Conductor = 9,
     /// Band/Orchestra
-    Band               = 10,
-    Composer           = 11,
-    Lyricist           = 12,
-    RecordingLocation  = 13,
-    DuringRecording    = 14,
-    DuringPerformance  = 15,
-    Movie              = 16,
+    Band = 10,
+    Composer = 11,
+    Lyricist = 12,
+    RecordingLocation = 13,
+    DuringRecording = 14,
+    DuringPerformance = 15,
+    Movie = 16,
     BrightColouredFish = 17,
-    Illustration       = 18,
-    ArtistLogoType     = 19,
-    StudioLogoType     = 20,
+    Illustration = 18,
+    ArtistLogoType = 19,
+    StudioLogoType = 20,
 }
 
 #[derive(Clone, Debug)]
 pub struct FlacFrame {
     pub metadata: FlacFrameMetadata,
-    frame_data:   Vec<u8>,
+    pub frame_data: Vec<u8>,
 }
 
 impl FlacFrame {
     /// Currently, this tool don't check the CRC values.
-    pub fn read_frame(
-        reader: impl Read,
-        stream_info: &StreamInfoBlock,
-        size: usize,
-    ) -> Result<Self, FlacParseError> {
-        let mut frame_data = Vec::with_capacity(size);
-        reader.take(size as u64).read_to_end(&mut frame_data)?;
+    pub fn read_frame( // 从给定 reader 读取一个完整 FLAC 帧，并解析出帧头元信息与帧体数据
+        reader: impl Read, // 同步读取器：应恰好可读取 size 字节（该帧的总长度）
+        stream_info: &StreamInfoBlock, // StreamInfo：提供采样位宽/采样率/声道等解析帧头所需的上下文
+        size: usize, // 本帧总字节数（含帧头、帧体、头部 CRC8 与尾部 CRC16）
+    ) -> Result<Self, FlacParseError> { // 返回解析后的 FlacFrame（包含 metadata 与去 CRC 的帧体字节）
+        let mut frame_data = Vec::with_capacity(size); // 预分配缓冲，避免多次扩容
+        reader.take(size as u64).read_to_end(&mut frame_data)?; // 精确读取 size 字节到缓冲；若不足或 IO 出错则返回错误
 
-        let (metadata, header_size) = FlacFrameMetadata::read(&*frame_data, stream_info)?;
+        let (metadata, header_size) = FlacFrameMetadata::read(&*frame_data, stream_info)?; // 解析帧头并返回：(帧元数据, 帧头总长度)
+        // 丢弃帧头末尾的 1 字节 CRC8 和整帧末尾的 2 字节 CRC16，仅保留纯帧体数据（编码后的子帧+残余）
         let frame_data = frame_data[header_size + 1..frame_data.len() - 2].to_vec(); // Dropping CRC8 in header and CRC16 in footer
 
-        Ok(Self {
-            metadata,
-            frame_data,
-        })
+        Ok(Self { metadata, frame_data }) // 组装成 FlacFrame：metadata 为已解析的头信息，frame_data 为剥离 CRC 的帧体
     }
-
     /// Returns the sample offset of each frame
     /// For fixed block size, frame number is also converted
-    pub fn scan_frames(
-        mut reader: impl Read + Seek,
-        frame_sizes: impl IntoIterator<Item = u64>,
-        stream_info: &StreamInfoBlock,
-    ) -> Result<Vec<u64>, FlacParseError> {
-        let mut block_size = None;
+    pub fn scan_frames( // 返回每个帧的“起始采样位置”（按帧顺序）
+        mut reader: impl Read + Seek, // 同步 reader：指向帧区起点，支持定位
+        frame_sizes: impl IntoIterator<Item = u64>, // 每个帧的字节大小序列（用于前进 seek）
+        stream_info: &StreamInfoBlock, // StreamInfo：解析帧头所需的上下文
+    ) -> Result<Vec<u64>, FlacParseError> { // 返回：每帧对应的采样起点（u64）
+        let mut block_size = None; // 用于 Fixed 策略时的块大小缓存（最后一帧可能小于固定值）
 
         frame_sizes
-            .into_iter()
+            .into_iter() // 按帧遍历
             .map(|size| {
+                // 读取当前帧头（不会消耗完整帧），返回 (元数据, 头部字节数)
                 let (metadata, bytes) = FlacFrameMetadata::read(&mut reader, stream_info)?;
+                // 跳过当前帧剩余的字节：size 总长 - 已读头部字节数
                 reader.seek(SeekFrom::Current(size as i64 - bytes as i64))?;
+                // 计算该帧的起始采样位置：
                 Ok(match metadata.position {
-                    FlacFramePosition::SampleCount(samples) => samples,
+                    FlacFramePosition::SampleCount(samples) => samples, // 可变阻塞（Variable）：直接提供采样计数
                     FlacFramePosition::FrameCount(frames) => {
-                        // The last frame will have smaller block size even for
-                        // fixed block size stream, we need to handle that
+                        // 固定阻塞（Fixed）：帧头里是“帧编号”，需乘以“块大小”得到采样起点
+                        // 注意：即使是 Fixed，最后一帧可能块大小小于固定值，但起点仍按固定块大小计算
                         if block_size.is_none() {
-                            block_size = Some(metadata.block_size.get_size());
+                            block_size = Some(metadata.block_size.get_size()); // 记录固定块大小（来自首个帧）
                         }
                         frames as u64 * block_size.unwrap() as u64
                     }
@@ -522,6 +513,8 @@ impl FlacFrame {
             })
             .collect()
     }
+
+    
 
     #[allow(dead_code)]
     fn extract_frames(data: &[u8]) -> Result<&[u8], FlacParseError> {
@@ -537,85 +530,88 @@ impl FlacFrame {
 
         Ok(&data[cursor.position() as usize..])
     }
+    pub fn into_bytes(self) -> Vec<u8> { // 将解析/修改后的帧重新组装为“可写入文件的完整帧字节”
+        let mut header_bytes = self.metadata.to_bytes(); // 依据当前元数据生成帧头字节（已包含头部 CRC8）
+        header_bytes.extend(self.frame_data); // 追加帧体数据（此前从源帧中剥离出的“无 CRC16 的帧体”）
+        let crc16 = crc::crc16(&header_bytes); // 基于“帧头(含CRC8)+帧体”计算整帧的 CRC16 校验值
+        header_bytes.extend(crc16.to_be_bytes()); // 以大端序追加 CRC16，形成完整帧尾
 
-    pub fn into_bytes(self) -> Vec<u8> {
-        let mut header_bytes = self.metadata.to_bytes();
-        header_bytes.extend(self.frame_data);
-        let crc16 = crc::crc16(&header_bytes);
-        header_bytes.extend(crc16.to_be_bytes());
-
-        header_bytes
+        header_bytes // 返回完整帧字节：帧头(含CRC8) + 帧体 + CRC16
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct FlacFrameMetadata {
-    pub blocking_strategy:  FlacBlockingStrategy,
-    pub block_size:         FlacBlockSize,
-    pub sample_rate:        FlacSampleRate,
+    pub blocking_strategy: FlacBlockingStrategy,
+    pub block_size: FlacBlockSize,
+    pub sample_rate: FlacSampleRate,
     pub channel_assignment: FlacChannelAssignment,
-    pub sample_bits:        FlacSampleBits,
-    pub position:           FlacFramePosition,
+    pub sample_bits: FlacSampleBits,
+    pub position: FlacFramePosition,
 }
 
 impl FlacFrameMetadata {
     /// This function expect to read from start of the frame (sync code
     /// identified), but the reader should not consume the sync code bytes
-    pub fn read(
-        mut reader: impl Read,
-        stream_info: &StreamInfoBlock,
-    ) -> Result<(Self, usize), FlacParseError> {
-        let mut bytes_read = 4;
+    pub fn read( // 解析帧头（从同步字节后开始读取），返回 (帧元数据, 头部总字节数)
+        mut reader: impl Read, // 同步 reader：应指向帧头起始处（sync code 已被外部识别，但不消耗）
+        stream_info: &StreamInfoBlock, // 用于补足“从 StreamInfo 继承”的位深与采样率
+    ) -> Result<(Self, usize), FlacParseError> { // 返回 (FlacFrameMetadata, 已读取的头部字节数)
+        let mut bytes_read = 4; // 前 4 字节已读取到 header_bytes 中（见下），用于统计头部长度
 
-        let mut header_bytes = [0; 4];
-        reader.read_exact(&mut header_bytes)?;
+        let mut header_bytes = [0; 4]; // 存放头部的 4 个关键字节
+        reader.read_exact(&mut header_bytes)?; // 读取 4 字节（含阻塞策略、块大小类型、采样率类型、声道/位深编码）
 
         macro_rules! header_err {
             () => {
-                |_| FlacParseError::InvalidFrameHeader(header_bytes.to_vec())
+                |_| FlacParseError::InvalidFrameHeader(header_bytes.to_vec()) // 构造包含原始字节的错误，便于调试
             };
         }
 
+        // 解析阻塞策略（Fixed/Variable）
         let blocking_strategy =
             FlacBlockingStrategy::try_from(header_bytes[1] & 0b1).map_err(header_err!())?;
+        // 解析块大小类型并校验保留值
         let block_size =
             FlacBlockSizeType::try_from((header_bytes[2] & 0xF0) >> 4).map_err(header_err!())?;
         if block_size == FlacBlockSizeType::Reserved {
             Err(FlacParseError::InvalidFrameHeader(header_bytes.to_vec()))?;
         }
+        // 解析采样率类型并校验非法值
         let sample_rate =
             FlacSampleRateType::try_from(header_bytes[2] & 0x0F).map_err(header_err!())?;
         if sample_rate == FlacSampleRateType::Invalid {
             Err(FlacParseError::InvalidFrameHeader(header_bytes.to_vec()))?;
         }
+        // 解析声道分配编码并校验范围
         let channel_assignment = (header_bytes[3] & 0xF0) >> 4;
         if channel_assignment >= 0b1011 {
             Err(FlacParseError::InvalidFrameHeader(header_bytes.to_vec()))?;
         }
         let channel_assignment =
             FlacChannelAssignment::try_from(channel_assignment).map_err(header_err!())?;
+        // 解析采样位深来源（预定义或从 StreamInfo 继承），保留值非法
         let sample_bits =
             FlacSampleBitsType::try_from((header_bytes[3] & 0b1110) >> 1).map_err(header_err!())?;
         let sample_bits = if sample_bits == FlacSampleBitsType::FromStreamInfo {
-            FlacSampleBits::Dynamic(
-                FlacSampleBitsType::FromStreamInfo,
-                stream_info.bits_per_sample,
-            )
+            FlacSampleBits::Dynamic(FlacSampleBitsType::FromStreamInfo, stream_info.bits_per_sample)
         } else if sample_bits == FlacSampleBitsType::Reserved {
             return Err(FlacParseError::InvalidFrameHeader(header_bytes.to_vec()));
         } else {
             FlacSampleBits::PreDefined(sample_bits)
         };
 
+        // 读取“位置字段”（UTF-8 可变长编码）：Variable 时为采样数，Fixed 时为帧编号
         let (position, bytes) = Self::read_utf8_digits(&mut reader)?;
         let position = match blocking_strategy {
             FlacBlockingStrategy::Fixed => FlacFramePosition::FrameCount(position as u32),
             FlacBlockingStrategy::Variable => FlacFramePosition::SampleCount(position),
         };
-        bytes_read += bytes;
+        bytes_read += bytes; // 统计变长字段的字节数
 
-        let mut buf = [0; 2];
+        let mut buf = [0; 2]; // 复用缓冲读取可选的 U8/U16 参数
 
+        // 若块大小类型要求在头部末尾携带 U8/U16 参数，则继续读取对应字节
         let block_size = if block_size == FlacBlockSizeType::HeaderEndU8 {
             bytes_read += 1;
             reader.read_exact(&mut buf[0..1])?;
@@ -628,6 +624,7 @@ impl FlacFrameMetadata {
             FlacBlockSize::PreDefined(block_size)
         };
 
+        // 同理，根据采样率类型，可能需要在头部末尾携带 U8/U16 采样率参数
         let sample_rate = match sample_rate {
             FlacSampleRateType::FromStreamInfo => {
                 FlacSampleRate::Dynamic(FlacSampleRateType::FromStreamInfo, stream_info.sample_rate)
@@ -646,7 +643,7 @@ impl FlacFrameMetadata {
             _ => FlacSampleRate::PreDefined(sample_rate),
         };
 
-        let metadata = Self {
+        let metadata = Self { // 汇总帧头解析结果
             blocking_strategy,
             block_size,
             sample_rate,
@@ -655,7 +652,7 @@ impl FlacFrameMetadata {
             position,
         };
 
-        Ok((metadata, bytes_read))
+        Ok((metadata, bytes_read)) // 返回帧元数据与头部总字节数（便于上层跳过剩余帧体部分）
     }
 
     /// Returns `(decoded number, code bytes)`
@@ -663,11 +660,7 @@ impl FlacFrameMetadata {
         let mut buf = [0; 7];
         reader.read_exact(&mut buf[0..1])?;
         let (ones, _) = (0..8).rev().fold((0, false), |(count, stop), i| {
-            if !stop && (buf[0] >> i) & 1 == 1 {
-                (count + 1, false)
-            } else {
-                (count, true)
-            }
+            if !stop && (buf[0] >> i) & 1 == 1 { (count + 1, false) } else { (count, true) }
         });
         let bytes_to_read = if ones > 0 { ones - 1 } else { 0 };
         reader.read_exact(&mut buf[1..1 + bytes_to_read])?;
@@ -686,18 +679,13 @@ impl FlacFrameMetadata {
             ((buf[0] as u64) & (!(0xFF << (bits - bytes_to_read * 6)))) << (bytes_to_read * 6);
 
         let number =
-            buf[1..1 + bytes_to_read]
-                .iter()
-                .enumerate()
-                .try_fold(initial, |res, (i, byte)| {
-                    if *byte >> 6 != 0b10 {
-                        Err(FlacParseError::InvalidFramePosition(
-                            buf[0..1 + bytes_to_read].to_vec(),
-                        ))
-                    } else {
-                        Ok(res | (((byte & 0b00111111) as u64) << ((bytes_to_read - i - 1) * 6)))
-                    }
-                });
+            buf[1..1 + bytes_to_read].iter().enumerate().try_fold(initial, |res, (i, byte)| {
+                if *byte >> 6 != 0b10 {
+                    Err(FlacParseError::InvalidFramePosition(buf[0..1 + bytes_to_read].to_vec()))
+                } else {
+                    Ok(res | (((byte & 0b00111111) as u64) << ((bytes_to_read - i - 1) * 6)))
+                }
+            });
 
         number.map(|number| (number, 1 + bytes_to_read))
     }
@@ -736,29 +724,37 @@ impl FlacFrameMetadata {
     }
 
     /// Metadata to header bytes, with CRC8 value
-    fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        // 创建输出缓冲区，用于存放编码后的帧头字节
         let mut out = vec![];
+        // 根据阻塞策略（固定/可变）选择同步字节（sync code + flags）：0xFF 0xF8 或 0xFF 0xF9
         let syncing_bytes = match self.blocking_strategy {
-            FlacBlockingStrategy::Fixed => [0xFF, 0xF8],
-            FlacBlockingStrategy::Variable => [0xFF, 0xF9],
+            FlacBlockingStrategy::Fixed => [0xFF, 0xF8],  // 固定块策略：sync+F8
+            FlacBlockingStrategy::Variable => [0xFF, 0xF9], // 可变块策略：sync+F9
         };
+        // 计算“块大小类型”和“采样率类型”的组合字节：高4位为块大小类型，低4位为采样率类型
         let bs_sr = ((self.block_size.get_type() as u8) << 4) + self.sample_rate.get_type() as u8;
+        // 计算“声道分配”和“采样位深类型”的组合字节：高4位为声道分配，低3位为位深类型（最低1位保留为0）
         let ch_bits =
             ((self.channel_assignment as u8) << 4) + ((self.sample_bits.get_type() as u8) << 1);
 
+        // 依据 FLAC 规范编码帧位置（sample/frame number）为 UTF-8 风格的可变长编码
         let position = Self::encode_utf8_digits(self.position.to_u64());
 
+        // 依次写入同步字节、bs_sr、ch_bits、位置字段
         out.extend(syncing_bytes);
         out.push(bs_sr);
         out.push(ch_bits);
         out.extend(position);
 
+        // 若块大小需要追加字段，则根据类型写入 1 字节或 2 字节的具体大小值
         match self.block_size.get_type() {
             FlacBlockSizeType::HeaderEndU8 => out.push(self.block_size.get_size() as u8),
             FlacBlockSizeType::HeaderEndU16 => out.extend(self.block_size.get_size().to_be_bytes()),
             _ => {}
         }
 
+        // 若采样率需要追加字段，则根据类型写入 1 或 2 字节的采样率原始值
         match self.sample_rate.get_type() {
             FlacSampleRateType::HeaderEndU8KHz => out.push(self.sample_rate.get_sr_raw() as u8),
             FlacSampleRateType::HeaderEndU16Hz | FlacSampleRateType::HeaderEndU16TenHz => {
@@ -767,16 +763,18 @@ impl FlacFrameMetadata {
             _ => {}
         }
 
+        // 计算并追加 CRC8（覆盖从同步字节开始到当前所有头部字节）
         let crc = crc::crc8(&out);
         out.push(crc);
 
+        // 返回构造完成的帧头字节序列
         out
     }
 }
 #[repr(u8)]
 #[derive(Clone, Debug, Eq, PartialEq, TryFromPrimitive)]
 pub enum FlacBlockingStrategy {
-    Fixed    = 0,
+    Fixed = 0,
     Variable = 1,
 }
 
@@ -826,20 +824,20 @@ impl FlacBlockSize {
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromPrimitive)]
 pub enum FlacBlockSizeType {
-    Reserved     = 0,
-    Samples192   = 1,
-    Samples576   = 2,
-    Samples1152  = 3,
-    Samples2304  = 4,
-    Samples4608  = 5,
-    HeaderEndU8  = 6,
+    Reserved = 0,
+    Samples192 = 1,
+    Samples576 = 2,
+    Samples1152 = 3,
+    Samples2304 = 4,
+    Samples4608 = 5,
+    HeaderEndU8 = 6,
     HeaderEndU16 = 7,
-    Samples256   = 8,
-    Samples512   = 9,
-    Samples1024  = 10,
-    Samples2048  = 11,
-    Samples4096  = 12,
-    Samples8192  = 13,
+    Samples256 = 8,
+    Samples512 = 9,
+    Samples1024 = 10,
+    Samples2048 = 11,
+    Samples4096 = 12,
+    Samples8192 = 13,
     Samples16384 = 14,
     Samples32768 = 15,
 }
@@ -895,22 +893,22 @@ impl FlacSampleRate {
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromPrimitive)]
 pub enum FlacSampleRateType {
-    FromStreamInfo    = 0,
-    SR88_2K           = 1,
-    SR176_4K          = 2,
-    SR192K            = 3,
-    SR8K              = 4,
-    SR16K             = 5,
-    SR22_05K          = 6,
-    SR24K             = 7,
-    SR32K             = 8,
-    SR44_1K           = 9,
-    SR48K             = 10,
-    SR96K             = 11,
-    HeaderEndU8KHz    = 12,
-    HeaderEndU16Hz    = 13,
+    FromStreamInfo = 0,
+    SR88_2K = 1,
+    SR176_4K = 2,
+    SR192K = 3,
+    SR8K = 4,
+    SR16K = 5,
+    SR22_05K = 6,
+    SR24K = 7,
+    SR32K = 8,
+    SR44_1K = 9,
+    SR48K = 10,
+    SR96K = 11,
+    HeaderEndU8KHz = 12,
+    HeaderEndU16Hz = 13,
     HeaderEndU16TenHz = 14,
-    Invalid           = 15,
+    Invalid = 15,
 }
 
 impl FlacSampleRateType {
@@ -939,17 +937,17 @@ impl FlacSampleRateType {
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromPrimitive)]
 pub enum FlacChannelAssignment {
-    Mono            = 0,
-    LeftRight       = 1,
+    Mono = 0,
+    LeftRight = 1,
     LeftRightCenter = 2,
     FrontLeftRightBackLeftRight = 3,
     FrontLeftRightCenterBackLeftRight = 4,
     FrontLeftRightCenterLFEBackLeftRight = 5,
     FrontLeftRightCenterLFEBackCenterSideLeftRight = 6,
     FrontLeftRightCenterLFEBackLeftRightSideLeftRight = 7,
-    LeftSideStereo  = 8,
+    LeftSideStereo = 8,
     RightSideStereo = 9,
-    MidSide         = 10,
+    MidSide = 10,
 }
 
 #[derive(Clone, Debug)]
@@ -971,13 +969,13 @@ impl FlacSampleBits {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromPrimitive)]
 pub enum FlacSampleBitsType {
     FromStreamInfo = 0,
-    Bits8          = 1,
-    Bits12         = 2,
-    Reserved       = 3,
-    Bits16         = 4,
-    Bits20         = 5,
-    Bits24         = 6,
-    Bits32         = 7,
+    Bits8 = 1,
+    Bits12 = 2,
+    Reserved = 3,
+    Bits16 = 4,
+    Bits20 = 5,
+    Bits24 = 6,
+    Bits32 = 7,
 }
 
 #[derive(Clone, Debug)]
@@ -1005,33 +1003,17 @@ mod tests {
     fn test_parse_utf8_digits() {
         let bytes_1 = [0b01001001u8];
         let bytes_3 = [0b11100001u8, 0b10101101, 0b10000101];
-        let bytes_7 = [
-            0b11111110u8,
-            0b10001011,
-            0b10110101,
-            0b10001111,
-            0b10101101,
-            0b10110101,
-            0b10101101,
-        ];
+        let bytes_7 =
+            [0b11111110u8, 0b10001011, 0b10110101, 0b10001111, 0b10101101, 0b10110101, 0b10101101];
         let bytes_invalid = [0b11100001u8, 0b11101101, 0b01000101];
 
         let number_1 = 0b1001001;
         let number_3 = 0b0001_101101_000101;
         let number_7 = 0b001011_110101_001111_101101_110101_101101;
 
-        assert_eq!(
-            FlacFrameMetadata::read_utf8_digits(&bytes_1[..]).unwrap().0,
-            number_1
-        );
-        assert_eq!(
-            FlacFrameMetadata::read_utf8_digits(&bytes_3[..]).unwrap().0,
-            number_3
-        );
-        assert_eq!(
-            FlacFrameMetadata::read_utf8_digits(&bytes_7[..]).unwrap().0,
-            number_7
-        );
+        assert_eq!(FlacFrameMetadata::read_utf8_digits(&bytes_1[..]).unwrap().0, number_1);
+        assert_eq!(FlacFrameMetadata::read_utf8_digits(&bytes_3[..]).unwrap().0, number_3);
+        assert_eq!(FlacFrameMetadata::read_utf8_digits(&bytes_7[..]).unwrap().0, number_7);
         assert!(matches!(
             FlacFrameMetadata::read_utf8_digits(&bytes_invalid[..]),
             Err(FlacParseError::InvalidFramePosition(_))
@@ -1042,15 +1024,8 @@ mod tests {
     fn test_encode_utf8_digits() {
         let bytes_1 = [0b01001001u8];
         let bytes_3 = [0b11100001u8, 0b10101101, 0b10000101];
-        let bytes_7 = [
-            0b11111110u8,
-            0b10001011,
-            0b10110101,
-            0b10001111,
-            0b10101101,
-            0b10110101,
-            0b10101101,
-        ];
+        let bytes_7 =
+            [0b11111110u8, 0b10001011, 0b10110101, 0b10001111, 0b10101101, 0b10110101, 0b10101101];
 
         let number_1 = 0b1001001;
         let number_3 = 0b0001_101101_000101;

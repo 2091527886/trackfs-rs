@@ -40,9 +40,7 @@ impl SliceReadExt<u8> for &[u8] {
     }
 
     fn read_bytes(&self, pointer: &mut usize, length: usize) -> Result<&[u8], InvalidPointerError> {
-        let bytes = self
-            .get(*pointer..(*pointer + length))
-            .ok_or(InvalidPointerError)?;
+        let bytes = self.get(*pointer..(*pointer + length)).ok_or(InvalidPointerError)?;
         *pointer += length;
         Ok(bytes)
     }

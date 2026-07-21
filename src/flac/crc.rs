@@ -233,9 +233,7 @@ const FLAC_CRC16_TABLE: [[u16; 256]; 8] = [
 ];
 
 pub fn crc8(data: &[u8]) -> u8 {
-    data.iter().fold(0, |crc, data_byte| {
-        FLAC_CRC8_TABLE[(crc ^ data_byte) as usize]
-    })
+    data.iter().fold(0, |crc, data_byte| FLAC_CRC8_TABLE[(crc ^ data_byte) as usize])
 }
 
 pub fn crc16(data: &[u8]) -> u16 {
@@ -267,6 +265,6 @@ mod test {
     fn test() {
         let data = [0xFF, 0xF9, 0x79, 0x18, 0x00, 0x04, 0x80];
         let result = crc8(&data);
-        println!("0x{result:X}");
+        tracing::info!("CRC=0x{result:X}");
     }
 }

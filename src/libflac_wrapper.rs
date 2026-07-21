@@ -1,5 +1,5 @@
 use std::{
-    ffi::{c_char, c_void, CStr},
+    ffi::{CStr, c_char, c_void},
     io::{ErrorKind, Read, Seek, SeekFrom},
 };
 
@@ -11,19 +11,20 @@ impl<T: Read + Seek> SeekableRead for T {}
 pub type FlacFrameData = Vec<Vec<FLAC__int32>>;
 
 pub struct DecoderClientData {
-    reader:  Box<dyn SeekableRead>,
-    path:    String,
+    reader: Box<dyn SeekableRead>,
+    path: String,
     decoded: Option<FlacFrameData>,
 }
 
 pub struct FlacDecoder {
-    inner:       *mut FLAC__StreamDecoder,
+    inner: *mut FLAC__StreamDecoder,
     client_data: Option<DecoderClientData>,
 }
 
 unsafe impl Send for FlacDecoder {}
 unsafe impl Sync for FlacDecoder {}
 
+#[allow(dead_code)]
 impl FlacDecoder {
     pub fn new() -> Self {
         let decoder = unsafe {
@@ -33,19 +34,12 @@ impl FlacDecoder {
             decoder
         };
 
-        Self {
-            inner:       decoder,
-            client_data: None,
-        }
+        Self { inner: decoder, client_data: None }
     }
 
     /// `path` is only for logging purposes
     pub fn init(&mut self, reader: Box<dyn SeekableRead>, path: String) {
-        let client_data = DecoderClientData {
-            reader,
-            path,
-            decoded: None,
-        };
+        let client_data = DecoderClientData { reader, path, decoded: None };
 
         self.client_data = Some(client_data);
 
@@ -110,11 +104,7 @@ impl FlacDecoder {
     pub fn decode_frame(&mut self) -> Option<FlacFrameData> {
         unsafe {
             let success = FLAC__stream_decoder_process_single(self.inner);
-            if success != 0 {
-                self.client_data.as_mut()?.decoded.take()
-            } else {
-                None
-            }
+            if success != 0 { self.client_data.as_mut()?.decoded.take() } else { None }
         }
     }
 }
@@ -161,10 +151,7 @@ unsafe extern "C" fn decoder_seek_cb(
     let client_data = client_data as *mut DecoderClientData;
 
     unsafe {
-        match (*client_data)
-            .reader
-            .seek(SeekFrom::Start(absolute_byte_offset))
-        {
+        match (*client_data).reader.seek(SeekFrom::Start(absolute_byte_offset)) {
             Ok(_) => FLAC__STREAM_DECODER_SEEK_STATUS_OK,
             Err(e) => {
                 let path = (*client_data).path.as_str();
@@ -286,7 +273,7 @@ pub struct EncoderClientData {
 }
 
 pub struct FlacEncoder {
-    inner:       *mut FLAC__StreamEncoder,
+    inner: *mut FLAC__StreamEncoder,
     client_data: EncoderClientData,
 }
 
@@ -296,7 +283,7 @@ unsafe impl Sync for FlacEncoder {}
 impl FlacEncoder {
     pub fn new() -> Self {
         Self {
-            inner:       unsafe { FLAC__stream_encoder_new() },
+            inner: unsafe { FLAC__stream_encoder_new() },
             client_data: EncoderClientData { buffer: vec![] },
         }
     }
@@ -335,10 +322,7 @@ impl FlacEncoder {
     pub fn queue_encode(&mut self, data: &FlacFrameData) -> bool {
         unsafe {
             let samples = data[0].len();
-            let data = data
-                .iter()
-                .map(|channel_data| channel_data.as_ptr())
-                .collect::<Vec<_>>();
+            let data = data.iter().map(|channel_data| channel_data.as_ptr()).collect::<Vec<_>>();
 
             // This function will copy data from buffer, so `data` is valid.
             FLAC__stream_encoder_process(self.inner, data.as_ptr(), samples as _) != 0
